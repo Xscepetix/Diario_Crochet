@@ -1,11 +1,14 @@
+// lib/screens/armario.dart
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Lista {
   String titulo;
-  String imagen; // Puede ser ruta local de archivo o URL
+  List<String> imagenes;
   String estado;
   String descripcion;
   String presupuesto;
@@ -13,12 +16,30 @@ class Lista {
 
   Lista({
     required this.titulo,
-    required this.imagen,
+    required this.imagenes,
     required this.estado,
     this.descripcion = '',
     this.presupuesto = '',
     required this.colorEstado,
   });
+
+  Map<String, dynamic> toJson() => {
+    'titulo': titulo,
+    'imagenes': imagenes,
+    'estado': estado,
+    'descripcion': descripcion,
+    'presupuesto': presupuesto,
+    'colorEstado': colorEstado.value,
+  };
+
+  factory Lista.fromJson(Map<String, dynamic> json) => Lista(
+    titulo: json['titulo'],
+    imagenes: List<String>.from(json['imagenes'] ?? []),
+    estado: json['estado'],
+    descripcion: json['descripcion'] ?? '',
+    presupuesto: json['presupuesto'] ?? '',
+    colorEstado: Color(json['colorEstado']),
+  );
 }
 
 class Armario extends StatefulWidget {
@@ -29,33 +50,65 @@ class Armario extends StatefulWidget {
 }
 
 class _ArmarioState extends State<Armario> {
-  final List<Lista> _proyectos = [
-    Lista(
-      titulo: 'Rosa',
-      imagen: '',
-      estado: 'En proceso',
-      descripcion: 'Amigurumi de rosa tejido con hilo de algodón rojo y verde.',
-      presupuesto: '15.00 €',
-      colorEstado: Colors.orange,
-    ),
-  ];
-
+  List<Lista> _proyectos = [];
+  bool _cargando = true;
   final ImagePicker _picker = ImagePicker();
 
-  // Función para seleccionar imagen desde la galería
-  Future<String?> _seleccionarFoto() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    return image?.path;
+  @override
+  void initState() {
+    super.initState();
+    _cargarProyectos();
   }
 
-  // AÑADIR NUEVO PROYECTO
+  Future<void> _cargarProyectos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? datosString = prefs.getString('proyectos_armario');
+
+    if (datosString != null && datosString.isNotEmpty) {
+      final List<dynamic> jsonList = jsonDecode(datosString);
+      setState(() {
+        _proyectos = jsonList.map((item) => Lista.fromJson(item)).toList();
+        _cargando = false;
+      });
+    } else {
+      setState(() {
+        _proyectos = [
+          Lista(
+            titulo: 'Rosa',
+            imagenes: [],
+            estado: 'En proceso',
+            descripcion:
+                'Amigurumi de rosa tejido con hilo de algodon rojo y verde.',
+            presupuesto: '15.00 €',
+            colorEstado: Colors.orange,
+          ),
+        ];
+        _cargando = false;
+      });
+      _guardarProyectos();
+    }
+  }
+
+  Future<void> _guardarProyectos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String jsonList = jsonEncode(
+      _proyectos.map((p) => p.toJson()).toList(),
+    );
+    await prefs.setString('proyectos_armario', jsonList);
+  }
+
+  Future<List<String>> _seleccionarFotos() async {
+    final List<XFile> images = await _picker.pickMultiImage();
+    return images.map((img) => img.path).toList();
+  }
+
   void _mostrarFormularioNuevoProyecto() {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     final presController = TextEditingController();
     String estadoSeleccionado = 'En proceso';
     Color colorSeleccionado = Colors.orange;
-    String rutaImagen = '';
+    List<String> rutasImagenes = [];
 
     showDialog(
       context: context,
@@ -63,18 +116,17 @@ class _ArmarioState extends State<Armario> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Añadir nuevo proyecto'),
+              title: const Text('Anadir nuevo proyecto'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Previsualización y botón de seleccionar foto
                     GestureDetector(
                       onTap: () async {
-                        final path = await _seleccionarFoto();
-                        if (path != null) {
+                        final paths = await _seleccionarFotos();
+                        if (paths.isNotEmpty) {
                           setDialogState(() {
-                            rutaImagen = path;
+                            rutasImagenes.addAll(paths);
                           });
                         }
                       },
@@ -86,14 +138,25 @@ class _ArmarioState extends State<Armario> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.grey.shade400),
                         ),
-                        child: rutaImagen.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.file(
-                                  File(rutaImagen),
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                ),
+                        child: rutasImagenes.isNotEmpty
+                            ? ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: rutasImagenes.length,
+                                itemBuilder: (context, index) {
+                                  return Padding(
+                                    padding: const EdgeInsets.all(4.0),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: SizedBox(
+                                        width: 100,
+                                        child: _buildImagenWidget(
+                                          rutasImagenes[index],
+                                          permitirZoom: false,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               )
                             : Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -105,7 +168,7 @@ class _ArmarioState extends State<Armario> {
                                   ),
                                   SizedBox(height: 6),
                                   Text(
-                                    'Añadir foto desde galería',
+                                    'Anadir fotos de galeria',
                                     style: TextStyle(
                                       color: Colors.grey,
                                       fontSize: 13,
@@ -126,7 +189,7 @@ class _ArmarioState extends State<Armario> {
                     TextField(
                       controller: descController,
                       decoration: const InputDecoration(
-                        labelText: 'Descripción / Proceso',
+                        labelText: 'Descripcion / Proceso',
                       ),
                       maxLines: 2,
                     ),
@@ -157,12 +220,15 @@ class _ArmarioState extends State<Armario> {
                       ],
                       onChanged: (value) {
                         estadoSeleccionado = value!;
-                        if (value == 'Terminado')
+                        if (value == 'Terminado') {
                           colorSeleccionado = Colors.green;
-                        if (value == 'En proceso')
+                        }
+                        if (value == 'En proceso') {
                           colorSeleccionado = Colors.orange;
-                        if (value == 'Sin empezar')
+                        }
+                        if (value == 'Sin empezar') {
                           colorSeleccionado = Colors.redAccent;
+                        }
                       },
                       decoration: const InputDecoration(labelText: 'Estado'),
                     ),
@@ -181,7 +247,7 @@ class _ArmarioState extends State<Armario> {
                         _proyectos.add(
                           Lista(
                             titulo: titleController.text,
-                            imagen: rutaImagen,
+                            imagenes: rutasImagenes,
                             estado: estadoSeleccionado,
                             descripcion: descController.text,
                             presupuesto: presController.text,
@@ -189,6 +255,7 @@ class _ArmarioState extends State<Armario> {
                           ),
                         );
                       });
+                      _guardarProyectos();
                       Navigator.pop(context);
                     }
                   },
@@ -204,6 +271,13 @@ class _ArmarioState extends State<Armario> {
 
   @override
   Widget build(BuildContext context) {
+    if (_cargando) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFFFC099),
+        body: Center(child: CircularProgressIndicator(color: Colors.black)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFFFC099),
       appBar: AppBar(
@@ -226,7 +300,6 @@ class _ArmarioState extends State<Armario> {
             const SizedBox(height: 10),
             _buildDecorativeDivider(),
             const SizedBox(height: 10),
-
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -258,6 +331,10 @@ class _ArmarioState extends State<Armario> {
   }
 
   Widget _buildProjectCard(Lista proyecto, int index) {
+    final imagenPortada = proyecto.imagenes.isNotEmpty
+        ? proyecto.imagenes.first
+        : '';
+
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () async {
@@ -272,8 +349,10 @@ class _ArmarioState extends State<Armario> {
           setState(() {
             _proyectos.removeAt(index);
           });
+          _guardarProyectos();
         } else {
-          setState(() {}); // Actualizar cambios al volver
+          setState(() {});
+          _guardarProyectos();
         }
       },
       child: Container(
@@ -292,15 +371,13 @@ class _ArmarioState extends State<Armario> {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 8),
-
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: _buildImagenWidget(proyecto.imagen),
+                child: _buildImagenWidget(imagenPortada, permitirZoom: false),
               ),
             ),
             const SizedBox(height: 8),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -345,14 +422,16 @@ class _ArmarioState extends State<Armario> {
   }
 }
 
-// Helper para cargar imagen local o de red
 Widget _buildImagenWidget(
   String rutaImagen, {
   double width = double.infinity,
   double height = double.infinity,
+  bool permitirZoom = false,
 }) {
+  Widget imagenWidget;
+
   if (rutaImagen.isEmpty) {
-    return Container(
+    imagenWidget = Container(
       color: Colors.grey[300],
       width: width,
       height: height,
@@ -363,25 +442,52 @@ Widget _buildImagenWidget(
       ),
     );
   } else if (rutaImagen.startsWith('http')) {
-    return Image.network(
+    imagenWidget = Image.network(
       rutaImagen,
       fit: BoxFit.cover,
       width: width,
       height: height,
+      errorBuilder: (context, error, stackTrace) => Container(
+        color: Colors.grey[300],
+        child: const Icon(Icons.broken_image, color: Colors.grey),
+      ),
     );
   } else {
-    return Image.file(
-      File(rutaImagen),
-      fit: BoxFit.cover,
-      width: width,
-      height: height,
+    try {
+      final file = File(rutaImagen);
+      imagenWidget = Image.file(
+        file,
+        fit: BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: Colors.grey[300],
+          child: const Icon(Icons.broken_image, color: Colors.grey),
+        ),
+      );
+    } catch (e) {
+      imagenWidget = Container(
+        color: Colors.grey[300],
+        width: width,
+        height: height,
+        child: const Icon(Icons.error, color: Colors.grey),
+      );
+    }
+  }
+
+  if (permitirZoom && rutaImagen.isNotEmpty) {
+    return InteractiveViewer(
+      panEnabled: true,
+      boundaryMargin: const EdgeInsets.all(20),
+      minScale: 0.8,
+      maxScale: 4.0,
+      child: imagenWidget,
     );
   }
+
+  return imagenWidget;
 }
 
-// =========================================================
-// PANTALLA DE DETALLE Y EDICIÓN CON CAMBIO DE FOTO
-// =========================================================
 class DetalleProyectoScreen extends StatefulWidget {
   final Lista proyecto;
 
@@ -397,8 +503,9 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
   late TextEditingController _presupuestoController;
   late String _estadoSeleccionado;
   late Color _colorSeleccionado;
-  late String _rutaImagen;
+  late List<String> _rutasImagenes;
   bool _editando = false;
+  int _paginaActual = 0;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -412,16 +519,33 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
     );
     _estadoSeleccionado = widget.proyecto.estado;
     _colorSeleccionado = widget.proyecto.colorEstado;
-    _rutaImagen = widget.proyecto.imagen;
+    _rutasImagenes = List.from(widget.proyecto.imagenes);
   }
 
-  Future<void> _cambiarFoto() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
+  @override
+  void dispose() {
+    _tituloController.dispose();
+    _descController.dispose();
+    _presupuestoController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _anadirMasFotos() async {
+    final List<XFile> images = await _picker.pickMultiImage();
+    if (images.isNotEmpty) {
       setState(() {
-        _rutaImagen = image.path;
+        _rutasImagenes.addAll(images.map((img) => img.path));
       });
     }
+  }
+
+  void _eliminarFotoActual(int index) {
+    setState(() {
+      _rutasImagenes.removeAt(index);
+      if (_paginaActual >= _rutasImagenes.length && _paginaActual > 0) {
+        _paginaActual--;
+      }
+    });
   }
 
   void _guardarCambios() {
@@ -431,7 +555,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
       widget.proyecto.presupuesto = _presupuestoController.text;
       widget.proyecto.estado = _estadoSeleccionado;
       widget.proyecto.colorEstado = _colorSeleccionado;
-      widget.proyecto.imagen = _rutaImagen;
+      widget.proyecto.imagenes = _rutasImagenes;
       _editando = false;
     });
   }
@@ -471,7 +595,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
                 context: context,
                 builder: (context) => AlertDialog(
                   title: const Text('¿Eliminar proyecto?'),
-                  content: const Text('Esta acción no se puede deshacer.'),
+                  content: const Text('Esta accion no se puede deshacer.'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
@@ -502,32 +626,112 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Imagen principal con botón para cambiar si está en modo edición
             Center(
-              child: Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: SizedBox(
-                      height: 220,
-                      width: double.infinity,
-                      child: _buildImagenWidget(_rutaImagen),
-                    ),
-                  ),
-                  if (_editando)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: FloatingActionButton.small(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        onPressed: _cambiarFoto,
-                        child: const Icon(Icons.photo_camera),
+              child: SizedBox(
+                height: 250,
+                width: double.infinity,
+                child: _rutasImagenes.isNotEmpty
+                    ? Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          PageView.builder(
+                            itemCount: _rutasImagenes.length,
+                            physics: const BouncingScrollPhysics(),
+                            onPageChanged: (index) {
+                              setState(() {
+                                _paginaActual = index;
+                              });
+                            },
+                            itemBuilder: (context, index) {
+                              return Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      height: 250,
+                                      child: _buildImagenWidget(
+                                        _rutasImagenes[index],
+                                        permitirZoom: true,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_editando)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.delete_forever,
+                                          color: Colors.red,
+                                        ),
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: Colors.white70,
+                                        ),
+                                        onPressed: () =>
+                                            _eliminarFotoActual(index),
+                                        tooltip: 'Eliminar esta foto',
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          if (_rutasImagenes.length > 1)
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  _rutasImagenes.length,
+                                  (index) => Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 3,
+                                    ),
+                                    width: _paginaActual == index ? 12 : 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _paginaActual == index
+                                          ? Colors.black
+                                          : Colors.black45,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.image_not_supported,
+                            size: 50,
+                            color: Colors.grey,
+                          ),
+                        ),
                       ),
-                    ),
-                ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            if (_editando)
+              Center(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _anadirMasFotos,
+                  icon: const Icon(Icons.add_a_photo),
+                  label: const Text('Anadir mas fotos'),
+                ),
+              ),
+
             const SizedBox(height: 20),
 
             Container(
@@ -583,14 +787,14 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
         ),
         const SizedBox(height: 16),
         const Text(
-          'Descripción / Proceso:',
+          'Descripcion / Proceso:',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         const SizedBox(height: 4),
         Text(
           widget.proyecto.descripcion.isNotEmpty
               ? widget.proyecto.descripcion
-              : 'Sin descripción detallada.',
+              : 'Sin descripcion detallada.',
           style: const TextStyle(fontSize: 15),
         ),
       ],
@@ -602,7 +806,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
       children: [
         TextField(
           controller: _tituloController,
-          decoration: const InputDecoration(labelText: 'Título'),
+          decoration: const InputDecoration(labelText: 'Titulo'),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
@@ -628,7 +832,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _descController,
-          decoration: const InputDecoration(labelText: 'Descripción / Proceso'),
+          decoration: const InputDecoration(labelText: 'Descripcion / Proceso'),
           maxLines: 4,
         ),
       ],
