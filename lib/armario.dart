@@ -6,40 +6,57 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class Lista {
+class ProyectoArmario {
+  String id;
   String titulo;
-  List<String> imagenes;
+  String? imagePath;
+  String categoria;
   String estado;
   String descripcion;
-  String presupuesto;
-  Color colorEstado;
+  String patron;
+  String materiales;
+  String tiempo;
+  double presupuesto;
 
-  Lista({
+  ProyectoArmario({
+    required this.id,
     required this.titulo,
-    required this.imagenes,
-    required this.estado,
+    this.imagePath,
+    this.categoria = 'Flores',
+    this.estado = 'En proceso',
     this.descripcion = '',
-    this.presupuesto = '',
-    required this.colorEstado,
+    this.patron = '',
+    this.materiales = '',
+    this.tiempo = '',
+    this.presupuesto = 0.0,
   });
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'titulo': titulo,
-    'imagenes': imagenes,
+    'imagePath': imagePath,
+    'categoria': categoria,
     'estado': estado,
     'descripcion': descripcion,
+    'patron': patron,
+    'materiales': materiales,
+    'tiempo': tiempo,
     'presupuesto': presupuesto,
-    'colorEstado': colorEstado.value,
   };
 
-  factory Lista.fromJson(Map<String, dynamic> json) => Lista(
-    titulo: json['titulo'],
-    imagenes: List<String>.from(json['imagenes'] ?? []),
-    estado: json['estado'],
-    descripcion: json['descripcion'] ?? '',
-    presupuesto: json['presupuesto'] ?? '',
-    colorEstado: Color(json['colorEstado']),
-  );
+  factory ProyectoArmario.fromJson(Map<String, dynamic> json) =>
+      ProyectoArmario(
+        id: json['id'],
+        titulo: json['titulo'],
+        imagePath: json['imagePath'],
+        categoria: json['categoria'] ?? 'Flores',
+        estado: json['estado'] ?? 'En proceso',
+        descripcion: json['descripcion'] ?? '',
+        patron: json['patron'] ?? '',
+        materiales: json['materiales'] ?? '',
+        tiempo: json['tiempo'] ?? '',
+        presupuesto: (json['presupuesto'] ?? 0.0).toDouble(),
+      );
 }
 
 class Armario extends StatefulWidget {
@@ -50,9 +67,23 @@ class Armario extends StatefulWidget {
 }
 
 class _ArmarioState extends State<Armario> {
-  List<Lista> _proyectos = [];
-  bool _cargando = true;
-  final ImagePicker _picker = ImagePicker();
+  List<ProyectoArmario> _proyectos = [];
+  String _categoriaSeleccionada = 'Todas';
+
+  final List<String> _categoriasDisponibles = [
+    'Todas',
+    'Flores',
+    'Amigurumis',
+    'Decoracion',
+    'Ropa',
+    'Otros',
+  ];
+
+  final List<String> _estadosDisponibles = [
+    'En proceso',
+    'Terminado',
+    'Pausado',
+  ];
 
   @override
   void initState() {
@@ -62,175 +93,263 @@ class _ArmarioState extends State<Armario> {
 
   Future<void> _cargarProyectos() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? datosString = prefs.getString('proyectos_armario');
-
-    if (datosString != null && datosString.isNotEmpty) {
-      final List<dynamic> jsonList = jsonDecode(datosString);
+    final String? proyectosString = prefs.getString('armario_proyectos');
+    if (proyectosString != null) {
+      final List<dynamic> decoded = jsonDecode(proyectosString);
       setState(() {
-        _proyectos = jsonList.map((item) => Lista.fromJson(item)).toList();
-        _cargando = false;
+        _proyectos = decoded
+            .map((item) => ProyectoArmario.fromJson(item))
+            .toList();
       });
-    } else {
-      setState(() {
-        _proyectos = [
-          Lista(
-            titulo: 'Rosa',
-            imagenes: [],
-            estado: 'En proceso',
-            descripcion:
-                'Amigurumi de rosa tejido con hilo de algodon rojo y verde.',
-            presupuesto: '15.00 €',
-            colorEstado: Colors.orange,
-          ),
-        ];
-        _cargando = false;
-      });
-      _guardarProyectos();
     }
   }
 
   Future<void> _guardarProyectos() async {
     final prefs = await SharedPreferences.getInstance();
-    final String jsonList = jsonEncode(
+    final String encoded = jsonEncode(
       _proyectos.map((p) => p.toJson()).toList(),
     );
-    await prefs.setString('proyectos_armario', jsonList);
+    await prefs.setString('armario_proyectos', encoded);
   }
 
-  Future<List<String>> _seleccionarFotos() async {
-    final List<XFile> images = await _picker.pickMultiImage();
-    return images.map((img) => img.path).toList();
+  List<ProyectoArmario> get _proyectosFiltrados {
+    if (_categoriaSeleccionada == 'Todas') {
+      return _proyectos;
+    }
+    return _proyectos
+        .where((p) => p.categoria == _categoriaSeleccionada)
+        .toList();
   }
 
-  void _mostrarFormularioNuevoProyecto() {
-    final titleController = TextEditingController();
-    final descController = TextEditingController();
-    final presController = TextEditingController();
-    String estadoSeleccionado = 'En proceso';
-    Color colorSeleccionado = Colors.orange;
-    List<String> rutasImagenes = [];
+  void _mostrarDialogoNuevoProyecto() {
+    final tituloCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final patronCtrl = TextEditingController();
+    final matCtrl = TextEditingController();
+    final tiempoCtrl = TextEditingController();
+    final presCtrl = TextEditingController();
+
+    String? tempImagePath;
+    String tempCategoria = 'Flores';
+    String tempEstado = 'En proceso';
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            void guardarNuevo() {
+              if (tituloCtrl.text.isNotEmpty) {
+                double presupuestoVal = double.tryParse(presCtrl.text) ?? 0.0;
+                setState(() {
+                  _proyectos.add(
+                    ProyectoArmario(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      titulo: tituloCtrl.text,
+                      imagePath: tempImagePath,
+                      categoria: tempCategoria,
+                      estado: tempEstado,
+                      descripcion: descCtrl.text,
+                      patron: patronCtrl.text,
+                      materiales: matCtrl.text,
+                      tiempo: tiempoCtrl.text,
+                      presupuesto: presupuestoVal,
+                    ),
+                  );
+                });
+                _guardarProyectos();
+                Navigator.pop(context);
+              }
+            }
+
             return AlertDialog(
-              title: const Text('Anadir nuevo proyecto'),
+              backgroundColor: const Color(0xFFFAF7F2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: const Text(
+                'Nuevo Proyecto',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     GestureDetector(
                       onTap: () async {
-                        final paths = await _seleccionarFotos();
-                        if (paths.isNotEmpty) {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(
+                          source: ImageSource.gallery,
+                        );
+                        if (pickedFile != null) {
                           setDialogState(() {
-                            rutasImagenes.addAll(paths);
+                            tempImagePath = pickedFile.path;
                           });
                         }
                       },
                       child: Container(
-                        height: 120,
-                        width: double.infinity,
+                        width: 90,
+                        height: 90,
                         decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade400),
+                          color: const Color(0xFFF0E5D8),
+                          shape: BoxShape.circle,
+                          image: tempImagePath != null
+                              ? DecorationImage(
+                                  image: FileImage(File(tempImagePath!)),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
                         ),
-                        child: rutasImagenes.isNotEmpty
-                            ? ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: rutasImagenes.length,
-                                itemBuilder: (context, index) {
-                                  return Padding(
-                                    padding: const EdgeInsets.all(4.0),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: SizedBox(
-                                        width: 100,
-                                        child: _buildImagenWidget(
-                                          rutasImagenes[index],
-                                          permitirZoom: false,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
+                        child: tempImagePath == null
+                            ? const Icon(
+                                Icons.add_a_photo_outlined,
+                                color: Colors.black54,
+                                size: 30,
                               )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(
-                                    Icons.add_a_photo,
-                                    size: 36,
-                                    color: Colors.grey,
-                                  ),
-                                  SizedBox(height: 6),
-                                  Text(
-                                    'Anadir fotos de galeria',
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: tituloCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Titulo del proyecto',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre del proyecto',
+                      controller: patronCtrl,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        labelText: 'Patron / Diseno',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: descController,
-                      decoration: const InputDecoration(
-                        labelText: 'Descripcion / Proceso',
+                      controller: matCtrl,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        labelText: 'Materiales usados',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
-                      maxLines: 2,
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: presController,
-                      decoration: const InputDecoration(
+                      controller: tiempoCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Tiempo invertido (ej: 8 horas)',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        labelText: 'Notas / Descripcion',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: presCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
                         labelText: 'Presupuesto (€)',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
-                      keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: estadoSeleccionado,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Terminado',
-                          child: Text('Terminado'),
+                      value: tempCategoria,
+                      decoration: InputDecoration(
+                        labelText: 'Categoria',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
                         ),
-                        DropdownMenuItem(
-                          value: 'En proceso',
-                          child: Text('En proceso'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Sin empezar',
-                          child: Text('Sin empezar'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        estadoSeleccionado = value!;
-                        if (value == 'Terminado') {
-                          colorSeleccionado = Colors.green;
-                        }
-                        if (value == 'En proceso') {
-                          colorSeleccionado = Colors.orange;
-                        }
-                        if (value == 'Sin empezar') {
-                          colorSeleccionado = Colors.redAccent;
+                      ),
+                      items: _categoriasDisponibles
+                          .where((c) => c != 'Todas')
+                          .map((cat) {
+                            return DropdownMenuItem(
+                              value: cat,
+                              child: Text(cat),
+                            );
+                          })
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            tempCategoria = val;
+                          });
                         }
                       },
-                      decoration: const InputDecoration(labelText: 'Estado'),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: tempEstado,
+                      decoration: InputDecoration(
+                        labelText: 'Estado',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: _estadosDisponibles.map((est) {
+                        return DropdownMenuItem(value: est, child: Text(est));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            tempEstado = val;
+                          });
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -238,27 +357,20 @@ class _ArmarioState extends State<Armario> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.black54),
+                  ),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    if (titleController.text.isNotEmpty) {
-                      setState(() {
-                        _proyectos.add(
-                          Lista(
-                            titulo: titleController.text,
-                            imagenes: rutasImagenes,
-                            estado: estadoSeleccionado,
-                            descripcion: descController.text,
-                            presupuesto: presController.text,
-                            colorEstado: colorSeleccionado,
-                          ),
-                        );
-                      });
-                      _guardarProyectos();
-                      Navigator.pop(context);
-                    }
-                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8B498),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: guardarNuevo,
                   child: const Text('Guardar'),
                 ),
               ],
@@ -269,14 +381,35 @@ class _ArmarioState extends State<Armario> {
     );
   }
 
+  void _abrirDetalleProyecto(ProyectoArmario proyecto) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DetalleProyectoScreen(
+          proyecto: proyecto,
+          categoriasDisponibles: _categoriasDisponibles
+              .where((c) => c != 'Todas')
+              .toList(),
+          estadosDisponibles: _estadosDisponibles,
+          onGuardarCambios: () {
+            _guardarProyectos();
+            setState(() {});
+          },
+          onEliminar: () {
+            setState(() {
+              _proyectos.removeWhere((p) => p.id == proyecto.id);
+            });
+            _guardarProyectos();
+          },
+        ),
+      ),
+    );
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_cargando) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFFFC099),
-        body: Center(child: CircularProgressIndicator(color: Colors.black)),
-      );
-    }
+    final listaActual = _proyectosFiltrados;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFC099),
@@ -292,115 +425,202 @@ class _ArmarioState extends State<Armario> {
               'ARMARIO',
               style: TextStyle(
                 fontFamily: 'serif',
-                fontSize: 32,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.5,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             _buildDecorativeDivider(),
-            const SizedBox(height: 10),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: GridView.builder(
-                  itemCount: _proyectos.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.75,
-                  ),
-                  itemBuilder: (context, index) {
-                    final proyecto = _proyectos[index];
-                    return _buildProjectCard(proyecto, index);
-                  },
-                ),
+            const SizedBox(height: 14),
+
+            // CATEGORIAS HORIZONTALES
+            SizedBox(
+              height: 38,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _categoriasDisponibles.length,
+                itemBuilder: (context, index) {
+                  final cat = _categoriasDisponibles[index];
+                  final esSeleccionada = cat == _categoriaSeleccionada;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        cat,
+                        style: TextStyle(
+                          color: esSeleccionada ? Colors.white : Colors.black87,
+                          fontWeight: esSeleccionada
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                      ),
+                      selected: esSeleccionada,
+                      selectedColor: const Color(0xFFB85B35),
+                      backgroundColor: const Color(0xFFFAF7F2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: BorderSide.none,
+                      ),
+                      onSelected: (bool selected) {
+                        if (selected) {
+                          setState(() {
+                            _categoriaSeleccionada = cat;
+                          });
+                        }
+                      },
+                    ),
+                  );
+                },
               ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // LISTA DE PROYECTOS
+            Expanded(
+              child: listaActual.isEmpty
+                  ? Center(
+                      child: Text(
+                        _categoriaSeleccionada == 'Todas'
+                            ? 'No hay proyectos en el armario'
+                            : 'No hay proyectos en "$_categoriaSeleccionada"',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 15,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: listaActual.length,
+                      itemBuilder: (context, index) {
+                        final item = listaActual[index];
+                        return GestureDetector(
+                          onTap: () => _abrirDetalleProyecto(item),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFAF7F2),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Container(
+                                    width: 65,
+                                    height: 65,
+                                    color: const Color(0xFFF0E5D8),
+                                    child: item.imagePath != null
+                                        ? Image.file(
+                                            File(item.imagePath!),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : const Icon(
+                                            Icons.palette_outlined,
+                                            color: Colors.black38,
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.titulo,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF0E5D8),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              item.categoria,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.black87,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: item.estado == 'Terminado'
+                                                  ? Colors.green.shade100
+                                                  : Colors.amber.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              item.estado,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    item.estado == 'Terminado'
+                                                    ? Colors.green.shade800
+                                                    : Colors.amber.shade900,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.black38,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        onPressed: _mostrarFormularioNuevoProyecto,
+        backgroundColor: const Color(0xFFFAF7F2),
+        foregroundColor: Colors.black,
+        elevation: 3,
+        onPressed: () => _mostrarDialogoNuevoProyecto(),
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildProjectCard(Lista proyecto, int index) {
-    final imagenPortada = proyecto.imagenes.isNotEmpty
-        ? proyecto.imagenes.first
-        : '';
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () async {
-        final resultado = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetalleProyectoScreen(proyecto: proyecto),
-          ),
-        );
-
-        if (resultado == 'eliminar') {
-          setState(() {
-            _proyectos.removeAt(index);
-          });
-          _guardarProyectos();
-        } else {
-          setState(() {});
-          _guardarProyectos();
-        }
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFEFEF),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              proyecto.titulo,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: _buildImagenWidget(imagenPortada, permitirZoom: false),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: proyecto.colorEstado,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  proyecto.estado,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -422,420 +642,475 @@ class _ArmarioState extends State<Armario> {
   }
 }
 
-Widget _buildImagenWidget(
-  String rutaImagen, {
-  double width = double.infinity,
-  double height = double.infinity,
-  bool permitirZoom = false,
-}) {
-  Widget imagenWidget;
-
-  if (rutaImagen.isEmpty) {
-    imagenWidget = Container(
-      color: Colors.grey[300],
-      width: width,
-      height: height,
-      child: const Icon(
-        Icons.image_not_supported,
-        color: Colors.grey,
-        size: 40,
-      ),
-    );
-  } else if (rutaImagen.startsWith('http')) {
-    imagenWidget = Image.network(
-      rutaImagen,
-      fit: BoxFit.cover,
-      width: width,
-      height: height,
-      errorBuilder: (context, error, stackTrace) => Container(
-        color: Colors.grey[300],
-        child: const Icon(Icons.broken_image, color: Colors.grey),
-      ),
-    );
-  } else {
-    try {
-      final file = File(rutaImagen);
-      imagenWidget = Image.file(
-        file,
-        fit: BoxFit.cover,
-        width: width,
-        height: height,
-        errorBuilder: (context, error, stackTrace) => Container(
-          color: Colors.grey[300],
-          child: const Icon(Icons.broken_image, color: Colors.grey),
-        ),
-      );
-    } catch (e) {
-      imagenWidget = Container(
-        color: Colors.grey[300],
-        width: width,
-        height: height,
-        child: const Icon(Icons.error, color: Colors.grey),
-      );
-    }
-  }
-
-  if (permitirZoom && rutaImagen.isNotEmpty) {
-    return InteractiveViewer(
-      panEnabled: true,
-      boundaryMargin: const EdgeInsets.all(20),
-      minScale: 0.8,
-      maxScale: 4.0,
-      child: imagenWidget,
-    );
-  }
-
-  return imagenWidget;
-}
-
+// PANTALLA DE DETALLE CON EDICION EN LA MISMA PANTALLA
 class DetalleProyectoScreen extends StatefulWidget {
-  final Lista proyecto;
+  final ProyectoArmario proyecto;
+  final List<String> categoriasDisponibles;
+  final List<String> estadosDisponibles;
+  final VoidCallback onGuardarCambios;
+  final VoidCallback onEliminar;
 
-  const DetalleProyectoScreen({super.key, required this.proyecto});
+  const DetalleProyectoScreen({
+    super.key,
+    required this.proyecto,
+    required this.categoriasDisponibles,
+    required this.estadosDisponibles,
+    required this.onGuardarCambios,
+    required this.onEliminar,
+  });
 
   @override
   State<DetalleProyectoScreen> createState() => _DetalleProyectoScreenState();
 }
 
 class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
-  late TextEditingController _tituloController;
-  late TextEditingController _descController;
-  late TextEditingController _presupuestoController;
-  late String _estadoSeleccionado;
-  late Color _colorSeleccionado;
-  late List<String> _rutasImagenes;
   bool _editando = false;
-  int _paginaActual = 0;
 
-  final ImagePicker _picker = ImagePicker();
+  late TextEditingController _tituloCtrl;
+  late TextEditingController _patronCtrl;
+  late TextEditingController _matCtrl;
+  late TextEditingController _tiempoCtrl;
+  late TextEditingController _descCtrl;
+  late TextEditingController _presCtrl;
+
+  late String _tempCategoria;
+  late String _tempEstado;
+  String? _tempImagePath;
 
   @override
   void initState() {
     super.initState();
-    _tituloController = TextEditingController(text: widget.proyecto.titulo);
-    _descController = TextEditingController(text: widget.proyecto.descripcion);
-    _presupuestoController = TextEditingController(
-      text: widget.proyecto.presupuesto,
+    _cargarDatos();
+  }
+
+  void _cargarDatos() {
+    _tituloCtrl = TextEditingController(text: widget.proyecto.titulo);
+    _patronCtrl = TextEditingController(text: widget.proyecto.patron);
+    _matCtrl = TextEditingController(text: widget.proyecto.materiales);
+    _tiempoCtrl = TextEditingController(text: widget.proyecto.tiempo);
+    _descCtrl = TextEditingController(text: widget.proyecto.descripcion);
+    _presCtrl = TextEditingController(
+      text: widget.proyecto.presupuesto > 0
+          ? widget.proyecto.presupuesto.toString()
+          : '',
     );
-    _estadoSeleccionado = widget.proyecto.estado;
-    _colorSeleccionado = widget.proyecto.colorEstado;
-    _rutasImagenes = List.from(widget.proyecto.imagenes);
+
+    _tempCategoria = widget.proyecto.categoria;
+    _tempEstado = widget.proyecto.estado;
+    _tempImagePath = widget.proyecto.imagePath;
   }
 
-  @override
-  void dispose() {
-    _tituloController.dispose();
-    _descController.dispose();
-    _presupuestoController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _anadirMasFotos() async {
-    final List<XFile> images = await _picker.pickMultiImage();
-    if (images.isNotEmpty) {
-      setState(() {
-        _rutasImagenes.addAll(images.map((img) => img.path));
-      });
-    }
-  }
-
-  void _eliminarFotoActual(int index) {
+  void _guardarFormulario() {
     setState(() {
-      _rutasImagenes.removeAt(index);
-      if (_paginaActual >= _rutasImagenes.length && _paginaActual > 0) {
-        _paginaActual--;
-      }
-    });
-  }
+      widget.proyecto.titulo = _tituloCtrl.text;
+      widget.proyecto.patron = _patronCtrl.text;
+      widget.proyecto.materiales = _matCtrl.text;
+      widget.proyecto.tiempo = _tiempoCtrl.text;
+      widget.proyecto.descripcion = _descCtrl.text;
+      widget.proyecto.presupuesto = double.tryParse(_presCtrl.text) ?? 0.0;
+      widget.proyecto.categoria = _tempCategoria;
+      widget.proyecto.estado = _tempEstado;
+      widget.proyecto.imagePath = _tempImagePath;
 
-  void _guardarCambios() {
-    setState(() {
-      widget.proyecto.titulo = _tituloController.text;
-      widget.proyecto.descripcion = _descController.text;
-      widget.proyecto.presupuesto = _presupuestoController.text;
-      widget.proyecto.estado = _estadoSeleccionado;
-      widget.proyecto.colorEstado = _colorSeleccionado;
-      widget.proyecto.imagenes = _rutasImagenes;
       _editando = false;
     });
+
+    widget.onGuardarCambios();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFC099),
+      backgroundColor: const Color(0xFFFAF7F2),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: Text(
-          _editando ? 'Editar Proyecto' : 'Detalle del Proyecto',
-          style: const TextStyle(color: Colors.black, fontFamily: 'serif'),
-        ),
         actions: [
-          IconButton(
-            icon: Icon(
-              _editando ? Icons.check : Icons.edit,
-              color: Colors.black,
-            ),
-            onPressed: () {
-              if (_editando) {
-                _guardarCambios();
-              } else {
+          if (!_editando) ...[
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: Colors.black87),
+              onPressed: () {
                 setState(() {
                   _editando = true;
                 });
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('¿Eliminar proyecto?'),
-                  content: const Text('Esta accion no se puede deshacer.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.pop(context, 'eliminar');
-                      },
-                      child: const Text(
-                        'Eliminar',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.black54),
+              onPressed: () {
+                widget.onEliminar();
+                Navigator.pop(context);
+              },
+            ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.black54),
+              onPressed: () {
+                setState(() {
+                  _cargarDatos();
+                  _editando = false;
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.check, color: Colors.green),
+              onPressed: _guardarFormulario,
+            ),
+          ],
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // FOTO EN GRANDE
             Center(
-              child: SizedBox(
-                height: 250,
-                width: double.infinity,
-                child: _rutasImagenes.isNotEmpty
-                    ? Stack(
-                        alignment: Alignment.bottomCenter,
-                        children: [
-                          PageView.builder(
-                            itemCount: _rutasImagenes.length,
-                            physics: const BouncingScrollPhysics(),
-                            onPageChanged: (index) {
-                              setState(() {
-                                _paginaActual = index;
-                              });
-                            },
-                            itemBuilder: (context, index) {
-                              return Stack(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      height: 250,
-                                      child: _buildImagenWidget(
-                                        _rutasImagenes[index],
-                                        permitirZoom: true,
-                                      ),
-                                    ),
-                                  ),
-                                  if (_editando)
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          Icons.delete_forever,
-                                          color: Colors.red,
-                                        ),
-                                        style: IconButton.styleFrom(
-                                          backgroundColor: Colors.white70,
-                                        ),
-                                        onPressed: () =>
-                                            _eliminarFotoActual(index),
-                                        tooltip: 'Eliminar esta foto',
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                          if (_rutasImagenes.length > 1)
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  _rutasImagenes.length,
-                                  (index) => Container(
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 3,
-                                    ),
-                                    width: _paginaActual == index ? 12 : 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: _paginaActual == index
-                                          ? Colors.black
-                                          : Colors.black45,
-                                    ),
-                                  ),
-                                ),
+              child: GestureDetector(
+                onTap: _editando
+                    ? () async {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(
+                          source: ImageSource.gallery,
+                        );
+                        if (pickedFile != null) {
+                          setState(() {
+                            _tempImagePath = pickedFile.path;
+                          });
+                        }
+                      }
+                    : null,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        width: double.infinity,
+                        height: 220,
+                        color: const Color(0xFFF0E5D8),
+                        child: _tempImagePath != null
+                            ? Image.file(
+                                File(_tempImagePath!),
+                                fit: BoxFit.cover,
+                              )
+                            : const Icon(
+                                Icons.palette_outlined,
+                                color: Colors.black38,
+                                size: 60,
                               ),
-                            ),
-                        ],
-                      )
-                    : Container(
+                      ),
+                    ),
+                    if (_editando)
+                      Container(
+                        width: double.infinity,
+                        height: 220,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                        child: const Center(
-                          child: Icon(
-                            Icons.image_not_supported,
-                            size: 50,
-                            color: Colors.grey,
-                          ),
+                        child: const Icon(
+                          Icons.add_a_photo,
+                          color: Colors.white,
+                          size: 40,
                         ),
                       ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
 
-            if (_editando)
-              Center(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    foregroundColor: Colors.white,
+            // TITULO
+            if (!_editando)
+              Text(
+                widget.proyecto.titulo,
+                style: const TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              )
+            else
+              TextField(
+                controller: _tituloCtrl,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Titulo del proyecto',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
                   ),
-                  onPressed: _anadirMasFotos,
-                  icon: const Icon(Icons.add_a_photo),
-                  label: const Text('Anadir mas fotos'),
                 ),
               ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFEFEF),
-                borderRadius: BorderRadius.circular(20),
+            // ETIQUETAS O DROPDOWNS
+            if (!_editando)
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8B498),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      widget.proyecto.categoria,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.proyecto.estado == 'Terminado'
+                          ? Colors.green.shade100
+                          : Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      widget.proyecto.estado,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: widget.proyecto.estado == 'Terminado'
+                            ? Colors.green.shade800
+                            : Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _tempCategoria,
+                      decoration: InputDecoration(
+                        labelText: 'Categoria',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: widget.categoriasDisponibles.map((cat) {
+                        return DropdownMenuItem(value: cat, child: Text(cat));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _tempCategoria = val;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _tempEstado,
+                      decoration: InputDecoration(
+                        labelText: 'Estado',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: widget.estadosDisponibles.map((est) {
+                        return DropdownMenuItem(value: est, child: Text(est));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _tempEstado = val;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-              child: _editando ? _buildModoEdicion() : _buildModoVista(),
+
+            const SizedBox(height: 24),
+
+            // SECCIONES CON TECLA INTRO PARA MULTILINEA (SALTO DE LINEA)
+            _buildCampoSeccion(
+              icono: Icons.book_outlined,
+              titulo: 'Patron / Diseno',
+              controller: _patronCtrl,
+              valorTexto: widget.proyecto.patron,
+              placeholder: 'Sin patron especificado',
+              maxLines: null,
             ),
+            _buildCampoSeccion(
+              icono: Icons.inventory_2_outlined,
+              titulo: 'Materiales',
+              controller: _matCtrl,
+              valorTexto: widget.proyecto.materiales,
+              placeholder: 'Sin materiales especificados',
+              maxLines: null,
+            ),
+            _buildCampoSeccion(
+              icono: Icons.timer_outlined,
+              titulo: 'Tiempo invertido',
+              controller: _tiempoCtrl,
+              valorTexto: widget.proyecto.tiempo,
+              placeholder: 'Sin tiempo especificado',
+            ),
+            _buildCampoSeccion(
+              icono: Icons.euro_outlined,
+              titulo: 'Presupuesto (€)',
+              controller: _presCtrl,
+              valorTexto: widget.proyecto.presupuesto > 0
+                  ? '${widget.proyecto.presupuesto.toStringAsFixed(2)} €'
+                  : '',
+              placeholder: '0.00 €',
+              isNumber: true,
+            ),
+            _buildCampoSeccion(
+              icono: Icons.notes_outlined,
+              titulo: 'Notas y Descripcion',
+              controller: _descCtrl,
+              valorTexto: widget.proyecto.descripcion,
+              placeholder: 'Sin descripcion',
+              maxLines: null,
+            ),
+
+            if (_editando) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8B498),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text(
+                    'Guardar Cambios',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  onPressed: _guardarFormulario,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildModoVista() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.proyecto.titulo,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: widget.proyecto.colorEstado,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Estado: ${widget.proyecto.estado}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Presupuesto:',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        Text(
-          widget.proyecto.presupuesto.isNotEmpty
-              ? widget.proyecto.presupuesto
-              : 'No especificado',
-          style: const TextStyle(fontSize: 15),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Descripcion / Proceso:',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          widget.proyecto.descripcion.isNotEmpty
-              ? widget.proyecto.descripcion
-              : 'Sin descripcion detallada.',
-          style: const TextStyle(fontSize: 15),
-        ),
-      ],
-    );
-  }
+  Widget _buildCampoSeccion({
+    required IconData icono,
+    required String titulo,
+    required TextEditingController controller,
+    required String valorTexto,
+    required String placeholder,
+    int? maxLines = 1,
+    bool isNumber = false,
+  }) {
+    if (!_editando && valorTexto.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-  Widget _buildModoEdicion() {
-    return Column(
-      children: [
-        TextField(
-          controller: _tituloController,
-          decoration: const InputDecoration(labelText: 'Titulo'),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _estadoSeleccionado,
-          items: const [
-            DropdownMenuItem(value: 'Terminado', child: Text('Terminado')),
-            DropdownMenuItem(value: 'En proceso', child: Text('En proceso')),
-            DropdownMenuItem(value: 'Sin empezar', child: Text('Sin empezar')),
-          ],
-          onChanged: (value) {
-            _estadoSeleccionado = value!;
-            if (value == 'Terminado') _colorSeleccionado = Colors.green;
-            if (value == 'En proceso') _colorSeleccionado = Colors.orange;
-            if (value == 'Sin empezar') _colorSeleccionado = Colors.redAccent;
-          },
-          decoration: const InputDecoration(labelText: 'Estado'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _presupuestoController,
-          decoration: const InputDecoration(labelText: 'Presupuesto'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _descController,
-          decoration: const InputDecoration(labelText: 'Descripcion / Proceso'),
-          maxLines: 4,
-        ),
-      ],
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, color: const Color(0xFFB85B35), size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titulo,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black45,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                if (!_editando)
+                  Text(
+                    valorTexto.isNotEmpty ? valorTexto : placeholder,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: Colors.black87,
+                      height: 1.3,
+                    ),
+                  )
+                else
+                  TextField(
+                    controller: controller,
+                    maxLines: maxLines,
+                    keyboardType: isNumber
+                        ? const TextInputType.numberWithOptions(decimal: true)
+                        : (maxLines == null
+                              ? TextInputType.multiline
+                              : TextInputType.text),
+                    decoration: InputDecoration(
+                      hintText: placeholder,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 10,
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFFAF7F2),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
