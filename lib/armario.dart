@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ProyectoArmario {
   String id;
   String titulo;
-  String? imagePath;
+  List<String> imagenes; // Lista con varias fotos
   String categoria;
   String estado;
   String descripcion;
@@ -21,7 +21,7 @@ class ProyectoArmario {
   ProyectoArmario({
     required this.id,
     required this.titulo,
-    this.imagePath,
+    List<String>? imagenes,
     this.categoria = 'Flores',
     this.estado = 'En proceso',
     this.descripcion = '',
@@ -29,12 +29,12 @@ class ProyectoArmario {
     this.materiales = '',
     this.tiempo = '',
     this.presupuesto = 0.0,
-  });
+  }) : imagenes = imagenes ?? [];
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'titulo': titulo,
-    'imagePath': imagePath,
+    'imagenes': imagenes,
     'categoria': categoria,
     'estado': estado,
     'descripcion': descripcion,
@@ -48,7 +48,11 @@ class ProyectoArmario {
       ProyectoArmario(
         id: json['id'],
         titulo: json['titulo'],
-        imagePath: json['imagePath'],
+        imagenes: json['imagenes'] != null
+            ? List<String>.from(json['imagenes'])
+            : (json['imagePath'] != null
+                  ? [json['imagePath']]
+                  : []), // Compatibilidad con versiones anteriores
         categoria: json['categoria'] ?? 'Flores',
         estado: json['estado'] ?? 'En proceso',
         descripcion: json['descripcion'] ?? '',
@@ -129,7 +133,7 @@ class _ArmarioState extends State<Armario> {
     final tiempoCtrl = TextEditingController();
     final presCtrl = TextEditingController();
 
-    String? tempImagePath;
+    List<String> tempImagenes = [];
     String tempCategoria = 'Flores';
     String tempEstado = 'En proceso';
 
@@ -146,7 +150,7 @@ class _ArmarioState extends State<Armario> {
                     ProyectoArmario(
                       id: DateTime.now().millisecondsSinceEpoch.toString(),
                       titulo: tituloCtrl.text,
-                      imagePath: tempImagePath,
+                      imagenes: tempImagenes,
                       categoria: tempCategoria,
                       estado: tempEstado,
                       descripcion: descCtrl.text,
@@ -178,38 +182,85 @@ class _ArmarioState extends State<Armario> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    GestureDetector(
-                      onTap: () async {
-                        final picker = ImagePicker();
-                        final pickedFile = await picker.pickImage(
-                          source: ImageSource.gallery,
-                        );
-                        if (pickedFile != null) {
-                          setDialogState(() {
-                            tempImagePath = pickedFile.path;
-                          });
-                        }
-                      },
-                      child: Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0E5D8),
-                          shape: BoxShape.circle,
-                          image: tempImagePath != null
-                              ? DecorationImage(
-                                  image: FileImage(File(tempImagePath!)),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
-                        child: tempImagePath == null
-                            ? const Icon(
-                                Icons.add_a_photo_outlined,
-                                color: Colors.black54,
-                                size: 30,
-                              )
-                            : null,
+                    // GALERIA DE FOTOS TEMPORAL EN DIALOGO
+                    SizedBox(
+                      height: 90,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: tempImagenes.length + 1,
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              width: 90,
+                              height: 90,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0E5D8),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.add_a_photo_outlined,
+                                  color: Colors.black54,
+                                  size: 30,
+                                ),
+                                onPressed: () async {
+                                  final picker = ImagePicker();
+                                  final pickedFile = await picker.pickImage(
+                                    source: ImageSource.gallery,
+                                  );
+                                  if (pickedFile != null) {
+                                    setDialogState(() {
+                                      tempImagenes.add(pickedFile.path);
+                                    });
+                                  }
+                                },
+                              ),
+                            );
+                          }
+                          final fotoIndex = index - 1;
+                          return Stack(
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                width: 90,
+                                height: 90,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  image: DecorationImage(
+                                    image: FileImage(
+                                      File(tempImagenes[fotoIndex]),
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 4,
+                                top: 4,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setDialogState(() {
+                                      tempImagenes.removeAt(fotoIndex);
+                                    });
+                                  },
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    padding: const EdgeInsets.all(4),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -523,9 +574,9 @@ class _ArmarioState extends State<Armario> {
                                     width: 65,
                                     height: 65,
                                     color: const Color(0xFFF0E5D8),
-                                    child: item.imagePath != null
+                                    child: item.imagenes.isNotEmpty
                                         ? Image.file(
-                                            File(item.imagePath!),
+                                            File(item.imagenes.first),
                                             fit: BoxFit.cover,
                                           )
                                         : const Icon(
@@ -642,7 +693,7 @@ class _ArmarioState extends State<Armario> {
   }
 }
 
-// PANTALLA DE DETALLE CON EDICION EN LA MISMA PANTALLA
+// PANTALLA DE DETALLE CON GALERIA MULTIPLE Y EDICION EN MISMA PANTALLA
 class DetalleProyectoScreen extends StatefulWidget {
   final ProyectoArmario proyecto;
   final List<String> categoriasDisponibles;
@@ -675,7 +726,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
 
   late String _tempCategoria;
   late String _tempEstado;
-  String? _tempImagePath;
+  late List<String> _tempImagenes;
 
   @override
   void initState() {
@@ -697,7 +748,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
 
     _tempCategoria = widget.proyecto.categoria;
     _tempEstado = widget.proyecto.estado;
-    _tempImagePath = widget.proyecto.imagePath;
+    _tempImagenes = List.from(widget.proyecto.imagenes);
   }
 
   void _guardarFormulario() {
@@ -710,7 +761,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
       widget.proyecto.presupuesto = double.tryParse(_presCtrl.text) ?? 0.0;
       widget.proyecto.categoria = _tempCategoria;
       widget.proyecto.estado = _tempEstado;
-      widget.proyecto.imagePath = _tempImagePath;
+      widget.proyecto.imagenes = List.from(_tempImagenes);
 
       _editando = false;
     });
@@ -765,60 +816,100 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // FOTO EN GRANDE
-            Center(
-              child: GestureDetector(
-                onTap: _editando
-                    ? () async {
-                        final picker = ImagePicker();
-                        final pickedFile = await picker.pickImage(
-                          source: ImageSource.gallery,
-                        );
-                        if (pickedFile != null) {
-                          setState(() {
-                            _tempImagePath = pickedFile.path;
-                          });
-                        }
-                      }
-                    : null,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
+            // GALERIA DE FOTOS EN DETALLE (CARRUSEL O GRILLA HORIZONTAL)
+            SizedBox(
+              height: 200,
+              child: _tempImagenes.isEmpty
+                  ? Center(
                       child: Container(
                         width: double.infinity,
-                        height: 220,
-                        color: const Color(0xFFF0E5D8),
-                        child: _tempImagePath != null
-                            ? Image.file(
-                                File(_tempImagePath!),
-                                fit: BoxFit.cover,
-                              )
-                            : const Icon(
-                                Icons.palette_outlined,
-                                color: Colors.black38,
-                                size: 60,
-                              ),
-                      ),
-                    ),
-                    if (_editando)
-                      Container(
-                        width: double.infinity,
-                        height: 220,
+                        height: 200,
                         decoration: BoxDecoration(
-                          color: Colors.black26,
+                          color: const Color(0xFFF0E5D8),
                           borderRadius: BorderRadius.circular(24),
                         ),
                         child: const Icon(
-                          Icons.add_a_photo,
-                          color: Colors.white,
-                          size: 40,
+                          Icons.palette_outlined,
+                          color: Colors.black38,
+                          size: 60,
                         ),
                       ),
-                  ],
-                ),
-              ),
+                    )
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _tempImagenes.length + (_editando ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (_editando && index == 0) {
+                          return Container(
+                            margin: const EdgeInsets.only(right: 12),
+                            width: 160,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0E5D8),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.add_a_photo,
+                                size: 40,
+                                color: Colors.black54,
+                              ),
+                              onPressed: () async {
+                                final picker = ImagePicker();
+                                final pickedFile = await picker.pickImage(
+                                  source: ImageSource.gallery,
+                                );
+                                if (pickedFile != null) {
+                                  setState(() {
+                                    _tempImagenes.add(pickedFile.path);
+                                  });
+                                }
+                              },
+                            ),
+                          );
+                        }
+
+                        final fotoIndex = _editando ? index - 1 : index;
+                        return Container(
+                          margin: const EdgeInsets.only(right: 12),
+                          width: 220,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            image: DecorationImage(
+                              image: FileImage(File(_tempImagenes[fotoIndex])),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              if (_editando)
+                                Positioned(
+                                  right: 8,
+                                  top: 8,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _tempImagenes.removeAt(fotoIndex);
+                                      });
+                                    },
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(6),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
             ),
             const SizedBox(height: 20),
 
@@ -956,7 +1047,7 @@ class _DetalleProyectoScreenState extends State<DetalleProyectoScreen> {
 
             const SizedBox(height: 24),
 
-            // SECCIONES CON TECLA INTRO PARA MULTILINEA (SALTO DE LINEA)
+            // SECCIONES CON SOPORTE DE SALTO DE LINEA (ENTER)
             _buildCampoSeccion(
               icono: Icons.book_outlined,
               titulo: 'Patron / Diseno',
