@@ -1,91 +1,125 @@
-// lib/screens/materiales_faltantes.dart
+// lib/screens/materiales.dart
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class MaterialFaltanteItem {
+class ItemMaterial {
+  String id;
   String nombre;
+  String tipo; // Ej: Hilo, Aguja, Relleno, Accesorio
+  String color;
   int cantidad;
-  String? imagenPath;
+  String notas;
 
-  MaterialFaltanteItem({
+  ItemMaterial({
+    required this.id,
     required this.nombre,
-    required this.cantidad,
-    this.imagenPath,
+    this.tipo = 'Hilo',
+    this.color = '',
+    this.cantidad = 1,
+    this.notas = '',
   });
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'nombre': nombre,
+    'tipo': tipo,
+    'color': color,
     'cantidad': cantidad,
-    'imagenPath': imagenPath,
+    'notas': notas,
   };
 
-  factory MaterialFaltanteItem.fromJson(Map<String, dynamic> json) =>
-      MaterialFaltanteItem(
-        nombre: json['nombre'],
-        cantidad: json['cantidad'] ?? 1,
-        imagenPath: json['imagenPath'],
-      );
+  factory ItemMaterial.fromJson(Map<String, dynamic> json) => ItemMaterial(
+    id: json['id'],
+    nombre: json['nombre'],
+    tipo: json['tipo'] ?? 'Hilo',
+    color: json['color'] ?? '',
+    cantidad: json['cantidad'] ?? 1,
+    notas: json['notas'] ?? '',
+  );
 }
 
-class MaterialesFaltantesScreen extends StatefulWidget {
-  const MaterialesFaltantesScreen({super.key});
+class MaterialesScreen extends StatefulWidget {
+  const MaterialesScreen({super.key});
 
   @override
-  State<MaterialesFaltantesScreen> createState() =>
-      _MaterialesFaltantesScreenState();
+  State<MaterialesScreen> createState() => _MaterialesScreenState();
 }
 
-class _MaterialesFaltantesScreenState extends State<MaterialesFaltantesScreen> {
-  List<MaterialFaltanteItem> _materiales = [];
-  bool _cargando = true;
+class _MaterialesScreenState extends State<MaterialesScreen> {
+  List<ItemMaterial> _materiales = [];
+  String _busqueda = '';
+  String _filtroTipo = 'Todos';
+
+  final TextEditingController _searchController = TextEditingController();
+
+  final List<String> _tiposDisponibles = [
+    'Todos',
+    'Hilo',
+    'Lana',
+    'Aguja',
+    'Relleno',
+    'Accesorios',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _cargarDatos();
+    _cargarMateriales();
   }
 
-  Future<void> _cargarDatos() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? datosString = prefs.getString('materiales_faltantes_lista');
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-    if (datosString != null && datosString.isNotEmpty) {
-      final List<dynamic> jsonList = jsonDecode(datosString);
+  Future<void> _cargarMateriales() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? matString = prefs.getString('inventario_materiales');
+    if (matString != null) {
+      final List<dynamic> decoded = jsonDecode(matString);
       setState(() {
-        _materiales = jsonList
-            .map((item) => MaterialFaltanteItem.fromJson(item))
+        _materiales = decoded
+            .map((item) => ItemMaterial.fromJson(item))
             .toList();
-        _cargando = false;
       });
-    } else {
-      setState(() {
-        _materiales = [
-          MaterialFaltanteItem(nombre: 'Lana negra 3mm', cantidad: 2),
-          MaterialFaltanteItem(nombre: 'Marcadores', cantidad: 1),
-          MaterialFaltanteItem(nombre: 'Lana azul cielo 3mm', cantidad: 1),
-        ];
-        _cargando = false;
-      });
-      _guardarDatos();
     }
   }
 
-  Future<void> _guardarDatos() async {
+  Future<void> _guardarMateriales() async {
     final prefs = await SharedPreferences.getInstance();
-    final String jsonList = jsonEncode(
+    final String encoded = jsonEncode(
       _materiales.map((m) => m.toJson()).toList(),
     );
-    await prefs.setString('materiales_faltantes_lista', jsonList);
+    await prefs.setString('inventario_materiales', encoded);
   }
 
-  void _mostrarDialogo({MaterialFaltanteItem? item, int? index}) {
-    final controller = TextEditingController(text: item?.nombre ?? '');
-    int cantidadActual = item?.cantidad ?? 1;
-    String? imagenSeleccionada = item?.imagenPath;
+  // LISTA FILTRADA POR BÚSQUEDA Y POR CATEGORÍA
+  List<ItemMaterial> get _materialesFiltrados {
+    return _materiales.where((item) {
+      final coincideTipo = _filtroTipo == 'Todos' || item.tipo == _filtroTipo;
+
+      final query = _busqueda.toLowerCase();
+      final coincideBusqueda =
+          _busqueda.isEmpty ||
+          item.nombre.toLowerCase().contains(query) ||
+          item.color.toLowerCase().contains(query) ||
+          item.notas.toLowerCase().contains(query);
+
+      return coincideTipo && coincideBusqueda;
+    }).toList();
+  }
+
+  void _mostrarDialogoMaterial({ItemMaterial? material}) {
+    final nombreCtrl = TextEditingController(text: material?.nombre ?? '');
+    final colorCtrl = TextEditingController(text: material?.color ?? '');
+    final cantCtrl = TextEditingController(
+      text: material != null ? material.cantidad.toString() : '1',
+    );
+    final notasCtrl = TextEditingController(text: material?.notas ?? '');
+    String tempTipo = material?.tipo ?? 'Hilo';
 
     showDialog(
       context: context,
@@ -93,95 +127,103 @@ class _MaterialesFaltantesScreenState extends State<MaterialesFaltantesScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(item == null ? 'Nuevo material' : 'Editar material'),
+              backgroundColor: const Color(0xFFFAF7F2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: Text(
+                material == null ? 'Nuevo Material' : 'Editar Material',
+                style: const TextStyle(
+                  fontFamily: 'serif',
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Selector de Imagen Circular
-                    GestureDetector(
-                      onTap: () async {
-                        final picker = ImagePicker();
-                        final pickedFile = await picker.pickImage(
-                          source: ImageSource.gallery,
-                        );
-                        if (pickedFile != null) {
+                    TextField(
+                      controller: nombreCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre / Marca',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: tempTipo,
+                      decoration: InputDecoration(
+                        labelText: 'Tipo de material',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: _tiposDisponibles
+                          .where((t) => t != 'Todos')
+                          .map(
+                            (tipo) => DropdownMenuItem(
+                              value: tipo,
+                              child: Text(tipo),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) {
                           setDialogState(() {
-                            imagenSeleccionada = pickedFile.path;
+                            tempTipo = val;
                           });
                         }
                       },
-                      child: Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          CircleAvatar(
-                            radius: 35,
-                            backgroundColor: Colors.black12,
-                            backgroundImage: imagenSeleccionada != null
-                                ? FileImage(File(imagenSeleccionada!))
-                                      as ImageProvider
-                                : null,
-                            child: imagenSeleccionada == null
-                                ? const Icon(
-                                    Icons.camera_alt,
-                                    size: 28,
-                                    color: Colors.black54,
-                                  )
-                                : null,
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.black,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.edit,
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     TextField(
-                      controller: controller,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre del material',
+                      controller: colorCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Color / Codigo de lote',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Cantidad (ud):'),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: () {
-                                if (cantidadActual > 1) {
-                                  setDialogState(() => cantidadActual--);
-                                }
-                              },
-                            ),
-                            Text(
-                              '$cantidadActual',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline),
-                              onPressed: () {
-                                setDialogState(() => cantidadActual++);
-                              },
-                            ),
-                          ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: cantCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Cantidad / Ovillos',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
                         ),
-                      ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notasCtrl,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        labelText: 'Notas adicionales',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -189,31 +231,44 @@ class _MaterialesFaltantesScreenState extends State<MaterialesFaltantesScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.black54),
+                  ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC099),
+                    backgroundColor: const Color(0xFFE8B498),
                     foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                   onPressed: () {
-                    if (controller.text.isNotEmpty) {
+                    if (nombreCtrl.text.isNotEmpty) {
+                      final c = int.tryParse(cantCtrl.text) ?? 1;
                       setState(() {
-                        if (index != null) {
-                          _materiales[index].nombre = controller.text;
-                          _materiales[index].cantidad = cantidadActual;
-                          _materiales[index].imagenPath = imagenSeleccionada;
-                        } else {
+                        if (material == null) {
                           _materiales.add(
-                            MaterialFaltanteItem(
-                              nombre: controller.text,
-                              cantidad: cantidadActual,
-                              imagenPath: imagenSeleccionada,
+                            ItemMaterial(
+                              id: DateTime.now().millisecondsSinceEpoch
+                                  .toString(),
+                              nombre: nombreCtrl.text,
+                              tipo: tempTipo,
+                              color: colorCtrl.text,
+                              cantidad: c,
+                              notas: notasCtrl.text,
                             ),
                           );
+                        } else {
+                          material.nombre = nombreCtrl.text;
+                          material.tipo = tempTipo;
+                          material.color = colorCtrl.text;
+                          material.cantidad = c;
+                          material.notas = notasCtrl.text;
                         }
                       });
-                      _guardarDatos();
+                      _guardarMateriales();
                       Navigator.pop(context);
                     }
                   },
@@ -227,31 +282,9 @@ class _MaterialesFaltantesScreenState extends State<MaterialesFaltantesScreen> {
     );
   }
 
-  void _cambiarCantidad(int index, int delta) {
-    setState(() {
-      _materiales[index].cantidad += delta;
-      if (_materiales[index].cantidad < 0) {
-        _materiales[index].cantidad = 0;
-      }
-    });
-    _guardarDatos();
-  }
-
-  void _eliminar(int index) {
-    setState(() {
-      _materiales.removeAt(index);
-    });
-    _guardarDatos();
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_cargando) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFFFC099),
-        body: Center(child: CircularProgressIndicator(color: Colors.black)),
-      );
-    }
+    final listaAmostrar = _materialesFiltrados;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFC099),
@@ -264,172 +297,285 @@ class _MaterialesFaltantesScreenState extends State<MaterialesFaltantesScreen> {
         child: Column(
           children: [
             const Text(
-              'MATERIALES FALTANTES',
+              'MATERIALES',
               style: TextStyle(
                 fontFamily: 'serif',
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
+                letterSpacing: 1.5,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildDecorativeDivider(),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+            const SizedBox(height: 14),
+
+            // BARRA DE BÚSQUEDA
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (val) {
+                  setState(() {
+                    _busqueda = val;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Buscar hilo, aguja o color...',
+                  hintStyle: const TextStyle(
+                    color: Colors.black38,
+                    fontSize: 14,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Color(0xFFB85B35),
+                  ),
+                  suffixIcon: _busqueda.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            color: Colors.black38,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _searchController.clear();
+                              _busqueda = '';
+                            });
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFFFAF7F2),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
-                itemCount: _materiales.length,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // FILTROS RÁPIDOS POR CATEGORÍA
+            SizedBox(
+              height: 36,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _tiposDisponibles.length,
                 itemBuilder: (context, index) {
-                  final item = _materiales[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFEFEF),
-                      borderRadius: BorderRadius.circular(40), // Estilo estadio
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
+                  final t = _tiposDisponibles[index];
+                  final esSel = t == _filtroTipo;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        t,
+                        style: TextStyle(
+                          color: esSel ? Colors.white : Colors.black87,
+                          fontSize: 12,
+                          fontWeight: esSel
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        // Imagen miniatura a la izquierda (como en tu plantilla)
-                        GestureDetector(
-                          onTap: () =>
-                              _mostrarDialogo(item: item, index: index),
-                          child: CircleAvatar(
-                            radius: 22,
-                            backgroundColor: Colors.black12,
-                            backgroundImage: item.imagenPath != null
-                                ? FileImage(File(item.imagenPath!))
-                                      as ImageProvider
-                                : null,
-                            child: item.imagenPath == null
-                                ? const Icon(
-                                    Icons.shopping_bag_outlined,
-                                    size: 20,
-                                    color: Colors.black54,
-                                  )
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Nombre del material
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () =>
-                                _mostrarDialogo(item: item, index: index),
-                            child: Text(
-                              item.nombre,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Cantidad y botones - / +
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${item.cantidad} ud.',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            // Boton menos
-                            InkWell(
-                              onTap: () => _cambiarCantidad(index, -1),
-                              child: Container(
-                                width: 26,
-                                height: 26,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFFC099),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.remove,
-                                  size: 14,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            // Boton mas
-                            InkWell(
-                              onTap: () => _cambiarCantidad(index, 1),
-                              child: Container(
-                                width: 26,
-                                height: 26,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFFC099),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.add,
-                                  size: 14,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                            // Menu de opciones
-                            PopupMenuButton<String>(
-                              icon: const Icon(
-                                Icons.more_vert,
-                                size: 18,
-                                color: Colors.black54,
-                              ),
-                              onSelected: (val) {
-                                if (val == 'editar') {
-                                  _mostrarDialogo(item: item, index: index);
-                                } else if (val == 'eliminar') {
-                                  _eliminar(index);
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'editar',
-                                  child: Text('Editar'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'eliminar',
-                                  child: Text('Eliminar'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
+                      selected: esSel,
+                      selectedColor: const Color(0xFFB85B35),
+                      backgroundColor: const Color(0xFFFAF7F2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide.none,
+                      ),
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _filtroTipo = t;
+                          });
+                        }
+                      },
                     ),
                   );
                 },
               ),
             ),
+
+            const SizedBox(height: 14),
+
+            // LISTA O MENSAJE DE VACÍO DIRECTAMENTE SOBRE EL FONDO
+            Expanded(
+              child: listaAmostrar.isEmpty
+                  ? Center(
+                      child: Text(
+                        _busqueda.isNotEmpty
+                            ? 'No se encontraron materiales'
+                            : 'Tu inventario de materiales está vacío',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 15,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(20),
+                      itemCount: listaAmostrar.length,
+                      itemBuilder: (context, index) {
+                        final item = listaAmostrar[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: const Color(0xFFEFE8DF),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0E5D8),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Icon(
+                                  _obtenerIconoMaterial(item.tipo),
+                                  color: const Color(0xFFB85B35),
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.nombre,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (item.color.isNotEmpty) ...[
+                                          Text(
+                                            'Color: ${item.color}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                          const Text(
+                                            ' • ',
+                                            style: TextStyle(
+                                              color: Colors.black38,
+                                            ),
+                                          ),
+                                        ],
+                                        Text(
+                                          item.tipo,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFFB85B35),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (item.notas.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item.notas,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black38,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3E9DD),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  'x${item.cantidad}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Color(0xFF2C221E),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  color: Colors.black45,
+                                  size: 18,
+                                ),
+                                onPressed: () =>
+                                    _mostrarDialogoMaterial(material: item),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.black38,
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _materiales.removeWhere(
+                                      (m) => m.id == item.id,
+                                    );
+                                  });
+                                  _guardarMateriales();
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        onPressed: () => _mostrarDialogo(),
+        backgroundColor: const Color(0xFFFAF7F2),
+        foregroundColor: Colors.black,
+        elevation: 3,
+        onPressed: () => _mostrarDialogoMaterial(),
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  IconData _obtenerIconoMaterial(String tipo) {
+    switch (tipo) {
+      case 'Aguja':
+        return Icons.edit;
+      case 'Lana':
+      case 'Hilo':
+        return Icons.texture;
+      case 'Relleno':
+        return Icons.cloud_outlined;
+      default:
+        return Icons.inventory_2_outlined;
+    }
   }
 
   Widget _buildDecorativeDivider() {
