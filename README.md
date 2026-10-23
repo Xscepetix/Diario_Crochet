@@ -1,7 +1,7 @@
 # Diario Crochet
 
 Una aplicación desarrollada en Dart para llevar el registro completo de mis proyectos de crochet, controlar materiales y calcular precios de venta.
-<img width="300" height="400" alt="Screenshot_2026-10-23-12-51-43-46_ee7544693d6dae5f2dac46f324e85af5" src="https://github.com/user-attachments/assets/e6ed071c-6be0-4b54-8cd3-4da89dd616f8" />
+<img width="300" height="450" alt="Screenshot_2026-10-23-12-51-43-46_ee7544693d6dae5f2dac46f324e85af5" src="https://github.com/user-attachments/assets/e6ed071c-6be0-4b54-8cd3-4da89dd616f8" />
 
 ## ¿Qué hace la aplicación?
 
