@@ -1,7 +1,9 @@
 // lib/screens/materiales.dart
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ItemMaterial {
@@ -11,6 +13,7 @@ class ItemMaterial {
   String color;
   int cantidad;
   String notas;
+  String? imagePath;
 
   ItemMaterial({
     required this.id,
@@ -19,6 +22,7 @@ class ItemMaterial {
     this.color = '',
     this.cantidad = 1,
     this.notas = '',
+    this.imagePath,
   });
 
   Map<String, dynamic> toJson() => {
@@ -28,6 +32,7 @@ class ItemMaterial {
     'color': color,
     'cantidad': cantidad,
     'notas': notas,
+    'imagePath': imagePath,
   };
 
   factory ItemMaterial.fromJson(Map<String, dynamic> json) => ItemMaterial(
@@ -37,6 +42,7 @@ class ItemMaterial {
     color: json['color'] ?? '',
     cantidad: json['cantidad'] ?? 1,
     notas: json['notas'] ?? '',
+    imagePath: json['imagePath'],
   );
 }
 
@@ -120,6 +126,7 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
     );
     final notasCtrl = TextEditingController(text: material?.notas ?? '');
     String tempTipo = material?.tipo ?? 'Hilo';
+    String? tempImagePath = material?.imagePath;
 
     showDialog(
       context: context,
@@ -142,6 +149,81 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // SELECTOR DE FOTO DEL MATERIAL
+                    GestureDetector(
+                      onTap: () async {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(
+                          source: ImageSource.gallery,
+                        );
+                        if (pickedFile != null) {
+                          setDialogState(() {
+                            tempImagePath = pickedFile.path;
+                          });
+                        }
+                      },
+                      child: Container(
+                        height: 100,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0E5D8),
+                          borderRadius: BorderRadius.circular(16),
+                          image: tempImagePath != null
+                              ? DecorationImage(
+                                  image: FileImage(File(tempImagePath!)),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: tempImagePath == null
+                            ? const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo_outlined,
+                                    color: Colors.black54,
+                                    size: 30,
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Añadir foto del material',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Stack(
+                                children: [
+                                  Positioned(
+                                    right: 8,
+                                    top: 8,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setDialogState(() {
+                                          tempImagePath = null;
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.black54,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     TextField(
                       controller: nombreCtrl,
                       decoration: InputDecoration(
@@ -258,6 +340,7 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                               color: colorCtrl.text,
                               cantidad: c,
                               notas: notasCtrl.text,
+                              imagePath: tempImagePath,
                             ),
                           );
                         } else {
@@ -266,6 +349,7 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                           material.color = colorCtrl.text;
                           material.cantidad = c;
                           material.notas = notasCtrl.text;
+                          material.imagePath = tempImagePath;
                         }
                       });
                       _guardarMateriales();
@@ -403,7 +487,7 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
 
             const SizedBox(height: 14),
 
-            // LISTA O MENSAJE DE VACÍO DIRECTAMENTE SOBRE EL FONDO
+            // LISTA DE MATERIALES CON FOTO Y CONTADOR DIRECTO COMPACTADO
             Expanded(
               child: listaAmostrar.isEmpty
                   ? Center(
@@ -424,7 +508,10 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                         final item = listaAmostrar[index];
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
@@ -435,19 +522,28 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
+                              // IMAGEN O ICONO DEL MATERIAL
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
                                   color: const Color(0xFFF0E5D8),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Icon(
-                                  _obtenerIconoMaterial(item.tipo),
-                                  color: const Color(0xFFB85B35),
-                                  size: 22,
+                                  child:
+                                      item.imagePath != null &&
+                                          item.imagePath!.isNotEmpty
+                                      ? Image.file(
+                                          File(item.imagePath!),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Icon(
+                                          _obtenerIconoMaterial(item.tipo),
+                                          color: const Color(0xFFB85B35),
+                                          size: 20,
+                                        ),
                                 ),
                               ),
-                              const SizedBox(width: 14),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,18 +552,18 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                                       item.nombre,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                                        fontSize: 14,
                                         color: Colors.black87,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 2),
                                     Row(
                                       children: [
                                         if (item.color.isNotEmpty) ...[
                                           Text(
                                             'Color: ${item.color}',
                                             style: const TextStyle(
-                                              fontSize: 12,
+                                              fontSize: 11,
                                               color: Colors.black54,
                                             ),
                                           ),
@@ -481,69 +577,117 @@ class _MaterialesScreenState extends State<MaterialesScreen> {
                                         Text(
                                           item.tipo,
                                           style: const TextStyle(
-                                            fontSize: 12,
+                                            fontSize: 11,
                                             color: Color(0xFFB85B35),
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
                                       ],
                                     ),
-                                    if (item.notas.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        item.notas,
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.black38,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
                                   ],
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF3E9DD),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  'x${item.cantidad}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: Color(0xFF2C221E),
+
+                              // CONTADOR DIRECTO (- cantidad +)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        if (item.cantidad > 0) {
+                                          item.cantidad--;
+                                        }
+                                      });
+                                      _guardarMateriales();
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFAF7F2),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFFEFE8DF),
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.remove,
+                                        size: 12,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    child: Text(
+                                      '${item.cantidad}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Color(0xFF2C221E),
+                                      ),
+                                    ),
+                                  ),
+                                  InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        item.cantidad++;
+                                      });
+                                      _guardarMateriales();
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(5),
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFB85B35),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.add,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.edit_outlined,
-                                  color: Colors.black45,
-                                  size: 18,
-                                ),
-                                onPressed: () =>
-                                    _mostrarDialogoMaterial(material: item),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.black38,
-                                  size: 18,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _materiales.removeWhere(
-                                      (m) => m.id == item.id,
-                                    );
-                                  });
-                                  _guardarMateriales();
-                                },
+
+                              const SizedBox(width: 6),
+
+                              // BOTONES EDITAR Y BORRAR (MÁS JUNTOS Y HACIA LA DERECHA)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(2),
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      color: Colors.black45,
+                                      size: 17,
+                                    ),
+                                    onPressed: () =>
+                                        _mostrarDialogoMaterial(material: item),
+                                  ),
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(2),
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.black38,
+                                      size: 17,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _materiales.removeWhere(
+                                          (m) => m.id == item.id,
+                                        );
+                                      });
+                                      _guardarMateriales();
+                                    },
+                                  ),
+                                ],
                               ),
                             ],
                           ),
