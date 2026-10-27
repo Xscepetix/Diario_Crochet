@@ -1,5 +1,8 @@
 // lib/screens/presupuesto.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MaterialPresupuesto {
   String nombre;
@@ -18,6 +21,21 @@ class MaterialPresupuesto {
     if (cantidadPaquete == 0) return 0.0;
     return (precioCompra / cantidadPaquete) * cantidadUsada;
   }
+
+  Map<String, dynamic> toJson() => {
+    'nombre': nombre,
+    'precioCompra': precioCompra,
+    'cantidadPaquete': cantidadPaquete,
+    'cantidadUsada': cantidadUsada,
+  };
+
+  factory MaterialPresupuesto.fromJson(Map<String, dynamic> json) =>
+      MaterialPresupuesto(
+        nombre: json['nombre'] ?? '',
+        precioCompra: (json['precioCompra'] ?? 0.0).toDouble(),
+        cantidadPaquete: (json['cantidadPaquete'] ?? 1.0).toDouble(),
+        cantidadUsada: (json['cantidadUsada'] ?? 0.0).toDouble(),
+      );
 }
 
 class CalculadoraPresupuestoScreen extends StatefulWidget {
@@ -30,7 +48,7 @@ class CalculadoraPresupuestoScreen extends StatefulWidget {
 
 class _CalculadoraPresupuestoScreenState
     extends State<CalculadoraPresupuestoScreen> {
-  final List<MaterialPresupuesto> _materiales = [
+  List<MaterialPresupuesto> _materiales = [
     MaterialPresupuesto(
       nombre: 'trapillo marron claro',
       precioCompra: 11.44,
@@ -39,9 +57,59 @@ class _CalculadoraPresupuestoScreenState
     ),
   ];
 
-  final _horasController = TextEditingController(text: '1.45');
-  final _precioHoraController = TextEditingController(text: '5.00');
-  final _margenController = TextEditingController(text: '20');
+  late TextEditingController _horasController;
+  late TextEditingController _precioHoraController;
+  late TextEditingController _margenController;
+
+  @override
+  void initState() {
+    super.initState();
+    _horasController = TextEditingController(text: '1.45');
+    _precioHoraController = TextEditingController(text: '5.00');
+    _margenController = TextEditingController(text: '20');
+    _cargarDatosGuardados();
+  }
+
+  Future<void> _cargarDatosGuardados() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Cargar materiales
+    final String? matString = prefs.getString(
+      'calculadora_presupuesto_materiales',
+    );
+    if (matString != null) {
+      final List<dynamic> decoded = jsonDecode(matString);
+      setState(() {
+        _materiales = decoded
+            .map((item) => MaterialPresupuesto.fromJson(item))
+            .toList();
+      });
+    }
+
+    // Cargar campos de texto
+    final String? horas = prefs.getString('calc_horas');
+    final String? precioHora = prefs.getString('calc_precio_hora');
+    final String? margen = prefs.getString('calc_margen');
+
+    if (horas != null) _horasController.text = horas;
+    if (precioHora != null) _precioHoraController.text = precioHora;
+    if (margen != null) _margenController.text = margen;
+
+    setState(() {});
+  }
+
+  Future<void> _guardarMateriales() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encoded = jsonEncode(
+      _materiales.map((m) => m.toJson()).toList(),
+    );
+    await prefs.setString('calculadora_presupuesto_materiales', encoded);
+  }
+
+  Future<void> _guardarCampo(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, value);
+  }
 
   double get _totalMateriales {
     return _materiales.fold(0.0, (sum, item) => sum + item.costeUtilizado);
@@ -88,7 +156,7 @@ class _CalculadoraPresupuestoScreenState
             borderRadius: BorderRadius.circular(24),
           ),
           title: Text(
-            material == null ? 'Anadir Material' : 'Editar Material',
+            material == null ? 'Añadir Material' : 'Editar Material',
             style: const TextStyle(
               fontFamily: 'serif',
               fontWeight: FontWeight.bold,
@@ -156,6 +224,7 @@ class _CalculadoraPresupuestoScreenState
                       _materiales.add(mat);
                     }
                   });
+                  _guardarMateriales();
                   Navigator.pop(context);
                 }
               },
@@ -300,6 +369,7 @@ class _CalculadoraPresupuestoScreenState
                           setState(() {
                             _materiales.removeAt(idx);
                           });
+                          _guardarMateriales();
                         },
                       ),
                     ],
@@ -312,7 +382,7 @@ class _CalculadoraPresupuestoScreenState
                   onPressed: () => _mostrarDialogoMaterial(),
                   icon: const Icon(Icons.add_circle_outline, size: 20),
                   label: const Text(
-                    'Anadir Material',
+                    'Añadir Material',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -340,12 +410,20 @@ class _CalculadoraPresupuestoScreenState
                       controller: _horasController,
                       label: 'Horas dedicadas (ej: 1.45 = 1h 27m)',
                       icon: Icons.access_time_rounded,
+                      onChanged: (val) {
+                        _guardarCampo('calc_horas', val);
+                        setState(() {});
+                      },
                     ),
                     const SizedBox(height: 12),
                     _buildInputCampoSuave(
                       controller: _precioHoraController,
                       label: 'Precio por hora (€/h)',
                       icon: Icons.euro_rounded,
+                      onChanged: (val) {
+                        _guardarCampo('calc_precio_hora', val);
+                        setState(() {});
+                      },
                     ),
                   ],
                 ),
@@ -381,6 +459,10 @@ class _CalculadoraPresupuestoScreenState
                       controller: _margenController,
                       label: 'Margen de Beneficio (%)',
                       icon: Icons.percent_rounded,
+                      onChanged: (val) {
+                        _guardarCampo('calc_margen', val);
+                        setState(() {});
+                      },
                     ),
                     const SizedBox(height: 12),
                     _buildFilaTextoSuave(
@@ -461,6 +543,7 @@ class _CalculadoraPresupuestoScreenState
     required TextEditingController controller,
     required String label,
     required IconData icon,
+    required Function(String) onChanged,
   }) {
     return TextField(
       controller: controller,
@@ -481,7 +564,7 @@ class _CalculadoraPresupuestoScreenState
           borderSide: BorderSide.none,
         ),
       ),
-      onChanged: (_) => setState(() {}),
+      onChanged: onChanged,
     );
   }
 
@@ -514,6 +597,7 @@ class _CalculadoraPresupuestoScreenState
         ],
       ),
     );
+    
   }
 
   Widget _buildFilaTextoSuave(
